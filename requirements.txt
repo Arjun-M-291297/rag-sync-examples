@@ -1,0 +1,9 @@
+# Core: run RAG Sync Monitor and embed locally (free, no API key).
+apify-client>=3.3,<4
+fastembed>=0.7
+
+# Install only the database you use:
+#   pip install chromadb
+#   pip install "pinecone>=7"
+#   pip install qdrant-client
+#   pip install "psycopg[binary]>=3.2" pgvector numpy

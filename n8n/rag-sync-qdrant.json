@@ -1,0 +1,446 @@
+{
+  "name": "RAG Sync Monitor → Qdrant (only changed chunks)",
+  "nodes": [
+    {
+      "id": "d3523d33-2f29-5023-8542-64fe8b638de2",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -380
+      ],
+      "parameters": {
+        "content": "## RAG Sync Monitor → Qdrant\n\nKeeps a Qdrant collection in sync with a docs site. Each run only embeds and writes the chunks that **changed**; removed content is deleted.\n\n**Setup (5 min)**\n1. Edit **Config**: `siteUrl`, `stateKey` (one per site), `qdrantUrl`, `collection`.\n2. Create 3 *Header Auth* credentials:\n   - **Apify**: name `Authorization`, value `Bearer <APIFY_TOKEN>`\n   - **OpenAI**: name `Authorization`, value `Bearer <OPENAI_API_KEY>`\n   - **Qdrant**: name `api-key`, value `<QDRANT_API_KEY>` (any value for a local Qdrant without auth)\n3. Click **Test workflow**. Run it again: only changes come through.\n4. Activate to run daily.\n\nThe Actor call waits up to 5 min, which suits sites up to a few hundred pages per run (raise `maxPages` gradually; unchanged pages are cheap).\nUses `text-embedding-3-small` (1536 dims). If you change the model, change `vectorSize` and use a new collection.",
+        "height": 520,
+        "width": 460
+      }
+    },
+    {
+      "id": "8622f997-7164-512f-b710-33a30574cc0f",
+      "name": "Run manually",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "3277bc45-c71a-5ffe-9b22-78690910f30d",
+      "name": "Every day",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c2a35413-04b4-5911-9383-21e378ae4fec",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "16281c32-f63d-52a5-aa9e-1acb0eec06ab",
+              "name": "siteUrl",
+              "value": "https://docs.example.com/",
+              "type": "string"
+            },
+            {
+              "id": "15b5a3ed-4bb3-549b-8434-97350ec9c21f",
+              "name": "stateKey",
+              "value": "example-docs",
+              "type": "string"
+            },
+            {
+              "id": "3cd58a59-594c-53e5-bf7d-72f759c2f90b",
+              "name": "maxPages",
+              "value": 200,
+              "type": "number"
+            },
+            {
+              "id": "b9aa4331-93fc-57b4-91a7-9100ffabb4df",
+              "name": "qdrantUrl",
+              "value": "http://localhost:6333",
+              "type": "string"
+            },
+            {
+              "id": "41ca2310-5950-55fa-b715-d063c56985fa",
+              "name": "collection",
+              "value": "docs",
+              "type": "string"
+            },
+            {
+              "id": "8c64090a-c56a-56f8-a277-c28501fe7fb2",
+              "name": "embeddingModel",
+              "value": "text-embedding-3-small",
+              "type": "string"
+            },
+            {
+              "id": "4f5739d2-c064-5b37-8043-ed7d50a38c6a",
+              "name": "vectorSize",
+              "value": 1536,
+              "type": "number"
+            },
+            {
+              "id": "68692db3-127e-57d1-b9e9-d157f2f2747f",
+              "name": "apifyApiBase",
+              "value": "https://api.apify.com",
+              "type": "string"
+            },
+            {
+              "id": "a0371047-82ec-54ef-95a5-02608f46557a",
+              "name": "openAiApiBase",
+              "value": "https://api.openai.com",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "66e4b608-3bfe-5e25-9711-f70d275f7bbe",
+      "name": "Ensure Qdrant collection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        100
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Config').first().json.qdrantUrl }}/collections/{{ $('Config').first().json.collection }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vectors: { size: $('Config').first().json.vectorSize, distance: 'Cosine' } }) }}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ragSyncQdrantCred",
+          "name": "Qdrant API key (header)"
+        }
+      }
+    },
+    {
+      "id": "a215ac9a-a503-5c4c-9180-2f8c5a856b25",
+      "name": "Run RAG Sync Monitor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apifyApiBase }}/v2/acts/cipherwise~rag-sync-monitor/run-sync-get-dataset-items?timeout=290",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ startUrls: [{ url: $('Config').first().json.siteUrl }], stateKey: $('Config').first().json.stateKey, maxPages: $('Config').first().json.maxPages }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ragSyncApifyCred",
+          "name": "Apify API token (header)"
+        }
+      }
+    },
+    {
+      "id": "2178cb81-3e43-5ad8-818e-61d34ab645dd",
+      "name": "Split changes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// RAG Sync Monitor returns one record per change: {op: \"upsert\" | \"delete\", chunk_id, url, text, ...}.\n// Chunk IDs are hex; Qdrant needs UUIDs, so pad them into UUID form (same mapping as sync_qdrant.py).\nconst toPointId = (id) => {\n  const h = String(id).toLowerCase();\n  if (!/^[0-9a-f]{1,32}$/.test(h)) throw new Error(`Unexpected chunk_id: ${id}`);\n  const p = h.padEnd(32, '0');\n  return `${p.slice(0, 8)}-${p.slice(8, 12)}-${p.slice(12, 16)}-${p.slice(16, 20)}-${p.slice(20)}`;\n};\nconst records = $input.all().map((item) => item.json).filter((r) => r && r.op);\nconst deletes = records.filter((r) => r.op === 'delete').map((r) => toPointId(r.chunk_id));\nconst upserts = records.filter((r) => r.op === 'upsert');\nconst BATCH = 64; // texts per embedding request\nconst out = [];\nif (deletes.length) out.push({ json: { kind: 'delete', ids: deletes } });\nfor (let i = 0; i < upserts.length; i += BATCH) {\n  const batch = upserts.slice(i, i + BATCH);\n  out.push({ json: {\n    kind: 'upsert',\n    texts: batch.map((u) => u.text),\n    points: batch.map((u) => ({\n      id: toPointId(u.chunk_id),\n      payload: {\n        chunk_id: u.chunk_id, text: u.text, url: u.url, title: u.title || '',\n        section: u.heading_path || '', chunk_index: u.chunk_index || 0,\n        source_type: u.source_type || 'html', synced_at: u.synced_at || '',\n      },\n    })),\n  } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "fddba041-f213-522e-8596-f23c5936be95",
+      "name": "Deletes or upserts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        100
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b2741b11-7f3b-5c6d-a31b-1280003a1342",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "delete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0b82a074-f849-55dc-ab39-36da5232e15c",
+      "name": "Qdrant: delete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        -20
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.qdrantUrl }}/collections/{{ $('Config').first().json.collection }}/points/delete?wait=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: $json.ids }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ragSyncQdrantCred",
+          "name": "Qdrant API key (header)"
+        }
+      }
+    },
+    {
+      "id": "36ce772f-35e5-50e3-9399-030c2cda6987",
+      "name": "OpenAI: embed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.openAiApiBase }}/v1/embeddings",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Config').first().json.embeddingModel, input: $json.texts }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ragSyncOpenAiCred",
+          "name": "OpenAI API key (header)"
+        }
+      }
+    },
+    {
+      "id": "b1168431-4089-5c2b-95a6-0e6edcf15c92",
+      "name": "Attach vectors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        220
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pair each embedding batch with the points it was made for.\nconst batch = $('Deletes or upserts?').item.json;\nconst vectors = [...$json.data].sort((a, b) => a.index - b.index).map((d) => d.embedding);\nif (vectors.length !== batch.points.length) throw new Error('Embedding count does not match the batch');\nreturn { json: { points: batch.points.map((p, i) => ({ ...p, vector: vectors[i] })) } };"
+      }
+    },
+    {
+      "id": "91f76a36-e1e8-5b5e-a031-616877cdc3e5",
+      "name": "Qdrant: upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        220
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Config').first().json.qdrantUrl }}/collections/{{ $('Config').first().json.collection }}/points?wait=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: $json.points }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ragSyncQdrantCred",
+          "name": "Qdrant API key (header)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Run manually": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every day": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Ensure Qdrant collection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Qdrant collection": {
+      "main": [
+        [
+          {
+            "node": "Run RAG Sync Monitor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run RAG Sync Monitor": {
+      "main": [
+        [
+          {
+            "node": "Split changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split changes": {
+      "main": [
+        [
+          {
+            "node": "Deletes or upserts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deletes or upserts?": {
+      "main": [
+        [
+          {
+            "node": "Qdrant: delete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenAI: embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: embed": {
+      "main": [
+        [
+          {
+            "node": "Attach vectors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach vectors": {
+      "main": [
+        [
+          {
+            "node": "Qdrant: upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

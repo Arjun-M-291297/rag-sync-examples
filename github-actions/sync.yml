@@ -1,0 +1,39 @@
+# Template: copy this file to .github/workflows/sync.yml in your own repository to enable it.
+# Keep a vector database in sync with a docs site every night.
+# Add repository secrets: APIFY_TOKEN plus your database's secrets (see .env.example),
+# and repository variables: SITE_URL, STATE_KEY and TARGET (chroma is local-only, so use pinecone, qdrant or pgvector).
+name: Sync docs to vector DB
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # daily at 03:17 UTC
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          case "${{ vars.TARGET }}" in
+            pinecone) pip install "pinecone>=7" ;;
+            qdrant)   pip install qdrant-client ;;
+            pgvector) pip install "psycopg[binary]>=3.2" pgvector numpy ;;
+            *) echo "Set the TARGET repository variable to pinecone, qdrant or pgvector" && exit 1 ;;
+          esac
+      - name: Sync
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          STATE_KEY: ${{ vars.STATE_KEY }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python sync_${{ vars.TARGET }}.py
